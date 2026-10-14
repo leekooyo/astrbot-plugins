@@ -21,7 +21,7 @@ The checker reads eligible files to hash them. It never reads or sends their con
    .\Install-RepoWatchTask.ps1 -ConfigPath "$env:LOCALAPPDATA\RepoWatch\config.json"
    ```
 
-   Run it from Windows PowerShell 5.1. It creates `RepoWatch-Hourly`. The task runs only in your interactive login session, starts within two minutes, and repeats hourly. It requires no administrator rights.
+   Run it from Windows PowerShell 5.1. It copies `Watch-Repos.ps1` next to the local config, then creates `RepoWatch-Hourly` using that durable local copy. The task runs only in your interactive login session, starts within two minutes, and repeats hourly. It requires no administrator rights. Rerun the installer after updating the repository script to refresh the installed copy.
 4. Test a run manually:
 
    ```powershell

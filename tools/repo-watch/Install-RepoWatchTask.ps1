@@ -16,11 +16,13 @@ if ($Uninstall) {
 }
 
 $config = (Resolve-Path -LiteralPath $ConfigPath).Path
-$watchScript = Join-Path $PSScriptRoot 'Watch-Repos.ps1'
-if (-not (Test-Path -LiteralPath $watchScript -PathType Leaf)) { throw "Missing checker script: $watchScript" }
+$sourceScript = Join-Path $PSScriptRoot 'Watch-Repos.ps1'
+if (-not (Test-Path -LiteralPath $sourceScript -PathType Leaf)) { throw "Missing checker script: $sourceScript" }
+$installedScript = Join-Path (Split-Path -Parent $config) 'Watch-Repos.ps1'
+Copy-Item -LiteralPath $sourceScript -Destination $installedScript -Force
 
 $powershellExe = (Get-Command powershell.exe -ErrorAction Stop).Source
-$arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchScript`" -ConfigPath `"$config`""
+$arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$installedScript`" -ConfigPath `"$config`""
 $action = New-ScheduledTaskAction -Execute $powershellExe -Argument $arguments -WorkingDirectory $PSScriptRoot
 $start = (Get-Date).AddMinutes(2)
 $trigger = New-ScheduledTaskTrigger -Once -At $start -RepetitionInterval (New-TimeSpan -Hours 1) -RepetitionDuration (New-TimeSpan -Days 3650)
@@ -30,5 +32,6 @@ $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances 
 
 Register-ScheduledTask -TaskName $taskName -Description 'Checks configured Git repositories and deployment folders hourly; sends state-change notifications.' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 Write-Output "Installed scheduled task: $taskName"
+Write-Output "Installed checker copy: $installedScript"
 Write-Output "Runs as $user when that user is logged in; first run is scheduled for $($start.ToString('yyyy-MM-dd HH:mm'))."
 Write-Output 'The trigger repeats hourly for 10 years; rerun this installer before it expires.'
