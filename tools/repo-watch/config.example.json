@@ -26,6 +26,7 @@
     { "name": "astrbot_plugin_qqadmin", "repoPath": "REPLACE_WITH_LOCAL_PATH\\astrbot_plugin_qqadmin", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\astrbot_plugin_qqadmin", "remote": "origin", "branch": "main" },
     { "name": "astrbot_plugin_relationship", "repoPath": "REPLACE_WITH_LOCAL_PATH\\astrbot_plugin_relationship", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\astrbot_plugin_relationship", "remote": "origin", "branch": "main" },
     { "name": "astrbot_plugin_reread", "repoPath": "REPLACE_WITH_LOCAL_PATH\\astrbot_plugin_reread", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\astrbot_plugin_reread", "remote": "origin", "branch": "main" },
+    { "name": "astrbot_plugin_status", "repoPath": "REPLACE_WITH_LOCAL_PATH\\astrbot_plugin_status", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\astrbot_plugin_status", "remote": "origin", "branch": "main" },
     { "name": "astrbot_plugin_wakepro", "repoPath": "REPLACE_WITH_LOCAL_PATH\\astrbot_plugin_wakepro", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\astrbot_plugin_wakepro", "remote": "origin", "branch": "main" },
     { "name": "builtin_commands_extension", "repoPath": "REPLACE_WITH_LOCAL_PATH\\builtin_commands_extension", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\builtin_commands_extension", "remote": "origin", "branch": "main" },
     { "name": "gatekeeper", "repoPath": "REPLACE_WITH_LOCAL_PATH\\gatekeeper", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\gatekeeper", "remote": "origin", "branch": "main" },
