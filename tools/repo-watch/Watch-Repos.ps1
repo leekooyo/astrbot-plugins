@@ -121,7 +121,7 @@ function Get-RepoStatus {
     $trackingRef = "refs/remotes/$remote/$branch"
     $head = Get-GitOutput -Repository $repo -GitArgs @('rev-parse', 'HEAD')
     if ($head.ExitCode -ne 0) { throw 'Unable to inspect HEAD.' }
-    $fingerprintParts.Add("head:$($head.Lines[0])")
+    $headHash = [string]$head.Lines[0]
     $tracking = Get-GitOutput -Repository $repo -GitArgs @('rev-parse', '--verify', $trackingRef)
     if ($tracking.ExitCode -eq 0) {
         $divergence = Get-GitOutput -Repository $repo -GitArgs @('rev-list', '--left-right', '--count', "HEAD...$trackingRef")
@@ -141,13 +141,13 @@ function Get-RepoStatus {
         $issues.Add('remote-check-failed')
     } else {
         $remoteLine = @($remoteResult.Lines | Where-Object { $_ }) | Select-Object -First 1
-        if ($remoteLine) { $fingerprintParts.Add("remote:$remoteLine") }
         if (-not $remoteLine) {
             $issues.Add('remote-branch-missing')
         } elseif ($tracking.ExitCode -eq 0) {
             $remoteHash = ([string]$remoteLine -split '\s+')[0]
             $trackingHash = [string](Get-GitOutput -Repository $repo -GitArgs @('rev-parse', $trackingRef)).Lines[0]
             if ($remoteHash -ne $trackingHash) { $issues.Add('remote-ref-changed') }
+            if ($remoteHash -eq $headHash) { [void]$issues.Remove('local-ahead') }
         } else {
             $issues.Add('remote-ref-changed')
         }
@@ -155,7 +155,8 @@ function Get-RepoStatus {
 
     $deploy = Get-DeploySummary -RepositoryConfig $RepositoryConfig -MonitorConfig $MonitorConfig
     if ($deploy -and ($deploy.Different -gt 0 -or $deploy.Missing -gt 0 -or $deploy.Unexpected -gt 0)) { $issues.Add('deployment-drift') }
-    if ($deploy) { $fingerprintParts.Add("deploy:$($deploy.Fingerprint)") }
+    if ($issues.Contains('local-ahead')) { $fingerprintParts.Add("head:$headHash") }
+    if ($issues.Contains('deployment-drift')) { $fingerprintParts.Add("deploy:$($deploy.Fingerprint)") }
     [pscustomobject]@{ Name = [string]$RepositoryConfig.name; Issues = @($issues | Sort-Object -Unique); Deploy = $deploy; Fingerprint = Get-ContentFingerprint -Parts @($fingerprintParts | Sort-Object) }
 }
 
@@ -163,20 +164,14 @@ $configFile = (Resolve-Path -LiteralPath $ConfigPath).Path
 $config = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
 if (-not $config.repositories -or -not $config.statePath) { throw 'Configuration must contain repositories and statePath.' }
 $statePath = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables([string]$config.statePath))
-$oldState = @{}
-$oldFingerprints = @{}
-$notificationsInitialized = $false
+$notifiedSignatures = @{}
 if (Test-Path -LiteralPath $statePath) {
     try {
         $parsed = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
-        foreach ($entry in $parsed.repositories) {
-            $oldState[[string]$entry.name] = @($entry.issues)
-            if ($entry.PSObject.Properties['fingerprint']) { $oldFingerprints[[string]$entry.name] = [string]$entry.fingerprint }
+        if ($parsed.PSObject.Properties['notifiedSignatures']) {
+            foreach ($property in $parsed.notifiedSignatures.PSObject.Properties) { $notifiedSignatures[[string]$property.Name] = [string]$property.Value }
         }
-        if ($parsed.PSObject.Properties['notificationsInitialized']) {
-            $notificationsInitialized = [bool]$parsed.notificationsInitialized
-        }
-    } catch { $oldState = @{} }
+    } catch { $notifiedSignatures = @{} }
 }
 
 $newResults = [Collections.Generic.List[object]]::new()
@@ -188,26 +183,29 @@ foreach ($repository in $config.repositories) {
         $deployDetails = if ($result.Deploy) { "; deployment diff=$($result.Deploy.Different), missing=$($result.Deploy.Missing), extra=$($result.Deploy.Unexpected)" } else { '' }
         Write-Output ("{0}: {1}{2}" -f $repository.name, $(if ($newIssues.Count) { $newIssues -join ', ' } else { 'OK' }), $deployDetails)
     } catch {
-        $failed = [pscustomobject]@{ Name = [string]$repository.name; Issues = @('check-failed'); Deploy = $null }
+        $failed = [pscustomobject]@{ Name = [string]$repository.name; Issues = @('check-failed'); Deploy = $null; Fingerprint = '' }
         $newResults.Add($failed)
         Write-Verbose ("{0}: line {1}: check failed: {2}" -f $repository.name, $_.InvocationInfo.ScriptLineNumber, $_.Exception.Message)
         Write-Output ("{0}: CHECK FAILED" -f $repository.name)
     }
 }
 
-$notification = Get-RepoWatchNotification -Results $newResults.ToArray() -PreviousIssuesByName $oldState -PreviousFingerprintByName $oldFingerprints -IsInitial (-not $notificationsInitialized)
+$notification = Get-RepoWatchNotification -Results $newResults.ToArray() -PreviousSignaturesByName $notifiedSignatures
 if (-not $NoNotify -and $notification.ShouldSend) {
     if (-not $config.PSObject.Properties['smtp']) { throw 'SMTP settings are missing from the local configuration.' }
     try {
         Send-RepoWatchEmail -Smtp $config.smtp -Subject $notification.Subject -Body $notification.Body
-        $notificationsInitialized = $true
+        $notifiedSignatures = $notification.SignaturesByName
         Write-Output 'Email notification sent.'
     } catch {
         throw 'Unable to send RepoWatch email. Notification state was not saved and will be retried on the next run.'
     }
 }
+if (-not $NoNotify -and -not $notification.ShouldSend) { $notifiedSignatures = $notification.SignaturesByName }
 
-$newState = [pscustomobject]@{ version = 3; notificationsInitialized = $notificationsInitialized; repositories = @($newResults | ForEach-Object { [pscustomobject]@{ name = $_.Name; issues = @($_.Issues); fingerprint = [string]$_.Fingerprint } }) }
+$orderedSignatures = [ordered]@{}
+foreach ($name in @($notifiedSignatures.Keys | Sort-Object)) { $orderedSignatures[$name] = [string]$notifiedSignatures[$name] }
+$newState = [pscustomobject]@{ version = 4; notifiedSignatures = $orderedSignatures; repositories = @($newResults | ForEach-Object { [pscustomobject]@{ name = $_.Name; issues = @($_.Issues); fingerprint = [string]$_.Fingerprint } }) }
 $stateJson = $newState | ConvertTo-Json -Depth 5
 $writeState = $true
 if (Test-Path -LiteralPath $statePath) {

@@ -38,7 +38,7 @@ $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 
-Register-ScheduledTask -TaskName $taskName -Description 'Checks configured Git repositories and deployment folders hourly; sends state-change notifications.' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+Register-ScheduledTask -TaskName $taskName -Description 'Checks configured Git repositories and deployment folders hourly; emails only for pending local changes.' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 Write-Output "Installed scheduled task: $taskName"
 Write-Output "Installed checker copy: $installedScript"
 Write-Output "Installed email initializer: $installedInitializer"

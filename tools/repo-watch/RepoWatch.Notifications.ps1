@@ -1,54 +1,65 @@
 ﻿function Get-RepoWatchNotification {
     param(
         [Parameter(Mandatory = $true)][object[]]$Results,
-        [Parameter(Mandatory = $true)][hashtable]$PreviousIssuesByName,
-        [hashtable]$PreviousFingerprintByName = @{},
-        [Parameter(Mandatory = $true)][bool]$IsInitial
+        [hashtable]$PreviousSignaturesByName = @{}
     )
 
-    $lines = [Collections.Generic.List[string]]::new()
+    $actionableIssues = @('deployment-drift', 'working-tree', 'local-ahead')
+    $pending = [Collections.Generic.List[object]]::new()
+    $nextSignatures = @{}
     $changed = $false
     foreach ($result in $Results) {
         $name = [string]$result.Name
-        $currentIssues = @($result.Issues | Where-Object { $_ } | Sort-Object -Unique)
-        if ($IsInitial) {
-            $changed = $true
-            $lines.Add(('{0}: {1}' -f $name, $(if ($currentIssues.Count) { $currentIssues -join ', ' } else { 'OK' })))
+        if (@($result.Issues) -contains 'check-failed') {
+            if ($PreviousSignaturesByName.ContainsKey($name)) { $nextSignatures[$name] = [string]$PreviousSignaturesByName[$name] }
             continue
         }
-
-        $previousIssues = @($PreviousIssuesByName[$name] | Where-Object { $_ } | Sort-Object -Unique)
-        $issuesChanged = ($previousIssues -join ',') -ne ($currentIssues -join ',')
-        $previousFingerprint = [string]$PreviousFingerprintByName[$name]
-        $currentFingerprint = if ($result.PSObject.Properties['Fingerprint']) { [string]$result.Fingerprint } else { '' }
-        $contentChanged = $currentIssues.Count -gt 0 -and $previousFingerprint -and $currentFingerprint -and $previousFingerprint -ne $currentFingerprint
-        if (-not $issuesChanged -and -not $contentChanged) { continue }
-        $changed = $true
-        if ($contentChanged -and -not $issuesChanged) {
-            $lines.Add(('{0}: 差异内容已变化；当前问题：{1}' -f $name, ($currentIssues -join ', ')))
-        } elseif ($currentIssues.Count) {
-            $lines.Add(('{0}: {1}' -f $name, ($currentIssues -join ', ')))
-        } elseif ($previousIssues.Count) {
-            $lines.Add(('{0}: 已恢复同步' -f $name))
+        $issues = @($result.Issues | Where-Object { $_ -in $actionableIssues } | Sort-Object -Unique)
+        if ($issues.Count -eq 0) { continue }
+        $pending.Add($result)
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try {
+            $bytes = [Text.Encoding]::UTF8.GetBytes(('{0}|{1}|{2}' -f $name, ($issues -join ','), [string]$result.Fingerprint))
+            $signature = ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+        } finally {
+            $sha.Dispose()
         }
+        $nextSignatures[$name] = $signature
+        if ([string]$PreviousSignaturesByName[$name] -ne $signature) { $changed = $true }
     }
-
     if (-not $changed) {
-        return [pscustomobject]@{ ShouldSend = $false; Subject = ''; Body = '' }
+        return [pscustomobject]@{ ShouldSend = $false; SignaturesByName = $nextSignatures; Subject = ''; Body = '' }
     }
 
-    if ($IsInitial -and @($lines | Where-Object { $_ -notmatch ': OK$' }).Count -eq 0) {
-        $lines.Insert(0, '所有受监测仓库当前均正常。')
+    $orderedPending = @($pending | Sort-Object Name)
+    $lines = [Collections.Generic.List[string]]::new()
+    $index = 0
+    foreach ($result in $orderedPending) {
+        $index++
+        $lines.Add(('{0}. {1}' -f $index, [string]$result.Name))
+        if (@($result.Issues) -contains 'deployment-drift') {
+            $details = if ($result.Deploy) { '（内容不同 {0}，仓库有但运行目录缺少 {1}，运行目录新增 {2}）' -f $result.Deploy.Different, $result.Deploy.Missing, $result.Deploy.Unexpected } else { '' }
+            $lines.Add(('   · 运行目录与仓库不同{0}。请核对并将需保留的改动同步到仓库。' -f $details))
+        }
+        if (@($result.Issues) -contains 'working-tree') {
+            $lines.Add('   · 仓库中有未提交或未跟踪的文件。请检查、提交并推送。')
+        }
+        if (@($result.Issues) -contains 'local-ahead') {
+            $lines.Add('   · 本地提交领先于上次记录的远端版本。请联网核对后推送。')
+        }
+        $lines.Add('')
     }
-    $subject = if ($IsInitial) { 'RepoWatch 首次状态报告' } else { 'RepoWatch 仓库状态变化' }
+
+    $subject = '【RepoWatch】{0} 个仓库待核对并同步 GitHub' -f $orderedPending.Count
     $body = @(
+        ('发现 {0} 个仓库有本地改动需要核对。' -f $orderedPending.Count)
         ('检查时间：{0}' -f (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))
         ''
         $lines.ToArray()
-        ''
-        '此邮件由本机 RepoWatch 监测器发送。'
+        '请确认改动是否需要保留，再同步、提交和推送。内容不变时不会重复提醒。'
+        '此邮件由本机 RepoWatch 发送；未发送文件内容或凭据。'
     ) -join "`r`n"
-    [pscustomobject]@{ ShouldSend = $true; Subject = $subject; Body = $body }
+    [pscustomobject]@{ ShouldSend = $true; SignaturesByName = $nextSignatures; Subject = $subject; Body = $body }
 }
 
 function Save-RepoWatchCredential {

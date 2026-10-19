@@ -33,11 +33,15 @@ try {
     & $watcher -ConfigPath $configPath -NoNotify | Out-Null
     $clean = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
     if (@($clean.repositories[0].issues).Count -ne 0) { throw 'Clean fixture unexpectedly has issues.' }
+    & $watcher -ConfigPath $configPath | Out-Null
+    $clean = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    if (@($clean.notifiedSignatures.PSObject.Properties).Count -ne 0) { throw 'Clean fixture must not mark a notification as sent.' }
 
     'first runtime edit' | Set-Content -LiteralPath (Join-Path $deploy 'plugin.py') -Encoding UTF8
     & $watcher -ConfigPath $configPath -NoNotify | Out-Null
     $first = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
     if (@($first.repositories[0].issues) -notcontains 'deployment-drift') { throw 'Runtime edit was not detected.' }
+    if (@($first.notifiedSignatures.PSObject.Properties).Count -ne 0) { throw 'A silent check must not suppress the next email.' }
 
     'second runtime edit' | Set-Content -LiteralPath (Join-Path $deploy 'plugin.py') -Encoding UTF8
     & $watcher -ConfigPath $configPath -NoNotify | Out-Null

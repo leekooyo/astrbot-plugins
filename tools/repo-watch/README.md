@@ -7,7 +7,7 @@ RepoWatch is a short-lived PowerShell checker for multiple Git repositories and 
 - Uncommitted and untracked files in each configured repository.
 - Local `HEAD` against the local remote-tracking branch, plus a read-only `git ls-remote` check against the current remote branch. It does not fetch, commit, push, merge, or change branches.
 - SHA-256 differences between Git-tracked source/document files and deployment files. It also counts eligible deployment files that have no tracked counterpart, which catches newly added runtime files.
-- Emails when a repository's issue categories or changed file contents change, and once when it becomes clean. An unchanged difference is not mailed again every hour. The first run after email setup sends a current-state report, including repositories that already had differences. If delivery fails, the state is not advanced, so the next run retries. State is written to a local JSON file only when it changes; it stores hashes, not file contents.
+- Emails only when a repository has local changes that may need to reach GitHub: an uncommitted working tree, local commits ahead of the recorded remote branch, or differences in the AstrBot runtime folder. Remote-only changes, check failures, and recovery do not send mail. Each email lists every currently pending repository with plain-language reasons and next steps. A new or changed pending difference triggers one email; unchanged differences do not repeat hourly. If delivery fails, notification state is not advanced, so the next run retries. The local JSON state stores hashes, not file contents.
 
 The checker reads eligible files to hash them. It never reads or sends their contents. Excluded path segments include `.git`, `__pycache__`, test directories, `UPSTREAM.md`, `node_modules`, virtual environments, caches, logs, temporary files, and runtime `data` directories. `excludeRuntimePaths` handles intentional machine-local files such as `image_host/config.json`. The extension allowlist and exclusions are configurable.
 
@@ -23,13 +23,13 @@ The checker reads eligible files to hash them. It never reads or sends their con
    ```
 
    It copies the watcher, notification helper, and email initializer next to the local config, then creates `RepoWatch-Hourly` using those durable local copies. The task runs only in your interactive login session, starts within two minutes, and repeats hourly. It requires no administrator rights. Rerun the installer after updating the repository scripts to refresh the installed copies.
-5. Initialize email from the installed local copy. This prompts for the authorization code without echoing it, saves it encrypted, then sends the initial status email:
+5. Initialize email from the installed local copy. This prompts for the authorization code without echoing it and saves it encrypted. It sends an email only if repositories currently need attention:
 
    ```powershell
    & "$env:LOCALAPPDATA\RepoWatch\Initialize-RepoWatchEmail.ps1" -ConfigPath "$env:LOCALAPPDATA\RepoWatch\config.json"
    ```
 
-6. Run a silent local check without sending mail:
+6. Run a silent local check without sending mail. This does not mark pending changes as already emailed:
 
    ```powershell
    .\Watch-Repos.ps1 -ConfigPath "$env:LOCALAPPDATA\RepoWatch\config.json" -NoNotify
@@ -39,7 +39,7 @@ The checker reads eligible files to hash them. It never reads or sends their con
 
 ## Status meanings
 
-`working-tree` means local edits, staged changes, or untracked files exist. `local-ahead` means local commits are not in the configured tracking branch. `tracking-behind` means the local tracking ref contains commits not in `HEAD`. `remote-ref-changed` means GitHub's current branch tip differs from the last locally fetched tracking ref; a manual fetch is needed to calculate exact divergence. `deployment-drift` means tracked files and the configured runtime directory differ. Network/authentication problems are summarized as `remote-check-failed` and can resolve on the next run.
+`working-tree` means local edits, staged changes, or untracked files exist. `local-ahead` means local commits are not in the configured tracking branch; it is removed when the live remote tip matches local `HEAD`. `tracking-behind` means the local tracking ref contains commits not in `HEAD`. `remote-ref-changed` means GitHub's current branch tip differs from the last locally fetched tracking ref; a manual fetch is needed to calculate exact divergence. `deployment-drift` means tracked files and the configured runtime directory differ. Network/authentication problems are summarized as `remote-check-failed` and can resolve on the next run.
 
 Remote checks use the Git credentials already configured for that checkout. Ensure GitHub credentials are available to your normal Windows user. The checker never prints remote URLs or raw Git errors.
 
