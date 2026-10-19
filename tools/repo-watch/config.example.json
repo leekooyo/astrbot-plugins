@@ -14,7 +14,7 @@
     ".py", ".js", ".ts", ".json", ".yaml", ".yml", ".toml", ".md", ".html", ".css", ".txt"
   ],
   "excludeDeployPaths": [
-    ".git", "__pycache__", ".pytest_cache", "tests", "test", "node_modules", ".venv", "venv", "cache", "logs", "data", "temp", "tmp", "UPSTREAM.md"
+    ".git", "__pycache__", ".pytest_cache", "tests", "test", "node_modules", ".venv", "venv", "cache", "logs", "data", "temp", "tmp", "UPSTREAM.md", ".github"
   ],
   "excludeRuntimePaths": ["image_host/config.json"],
   "repositories": [
