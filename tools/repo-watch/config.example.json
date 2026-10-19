@@ -1,0 +1,35 @@
+{
+  "statePath": "%LOCALAPPDATA%\\RepoWatch\\state.json",
+  "proxyMode": "git-config",
+  "smtp": {
+    "server": "smtp.qq.com",
+    "port": 587,
+    "enableSsl": true,
+    "username": "your-qq-number@qq.com",
+    "from": "your-qq-number@qq.com",
+    "to": "your-qq-number@qq.com",
+    "credentialPath": "%LOCALAPPDATA%\\RepoWatch\\smtp-password.dpapi"
+  },
+  "deployExtensions": [
+    ".py", ".js", ".ts", ".json", ".yaml", ".yml", ".toml", ".md", ".html", ".css", ".txt"
+  ],
+  "excludeDeployPaths": [
+    ".git", "__pycache__", ".pytest_cache", "tests", "test", "node_modules", ".venv", "venv", "cache", "logs", "data", "temp", "tmp", "UPSTREAM.md", ".github"
+  ],
+  "excludeRuntimePaths": ["image_host/config.json"],
+  "repositories": [
+    { "name": "astrbot_plugin_bilivideo", "repoPath": "REPLACE_WITH_LOCAL_PATH\\astrbot_plugin_bilivideo", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\astrbot_plugin_bilivideo", "remote": "origin", "branch": "main" },
+    { "name": "astrbot_plugin_error_pro", "repoPath": "REPLACE_WITH_LOCAL_PATH\\astrbot_plugin_error_pro", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\astrbot_plugin_error_pro", "remote": "origin", "branch": "main" },
+    { "name": "astrbot_plugin_local_help", "repoPath": "REPLACE_WITH_LOCAL_PATH\\astrbot_plugin_local_help", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\astrbot_plugin_local_help", "remote": "origin", "branch": "main" },
+    { "name": "astrbot_plugin_memelite", "repoPath": "REPLACE_WITH_LOCAL_PATH\\astrbot_plugin_memelite", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\astrbot_plugin_memelite", "remote": "origin", "branch": "main" },
+    { "name": "astrbot_plugin_pokepro", "repoPath": "REPLACE_WITH_LOCAL_PATH\\astrbot_plugin_pokepro", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\astrbot_plugin_pokepro", "remote": "origin", "branch": "main" },
+    { "name": "astrbot_plugin_qqadmin", "repoPath": "REPLACE_WITH_LOCAL_PATH\\astrbot_plugin_qqadmin", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\astrbot_plugin_qqadmin", "remote": "origin", "branch": "main" },
+    { "name": "astrbot_plugin_relationship", "repoPath": "REPLACE_WITH_LOCAL_PATH\\astrbot_plugin_relationship", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\astrbot_plugin_relationship", "remote": "origin", "branch": "main" },
+    { "name": "astrbot_plugin_reread", "repoPath": "REPLACE_WITH_LOCAL_PATH\\astrbot_plugin_reread", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\astrbot_plugin_reread", "remote": "origin", "branch": "main" },
+    { "name": "astrbot_plugin_status", "repoPath": "REPLACE_WITH_LOCAL_PATH\\astrbot_plugin_status", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\astrbot_plugin_status", "remote": "origin", "branch": "main" },
+    { "name": "astrbot_plugin_wakepro", "repoPath": "REPLACE_WITH_LOCAL_PATH\\astrbot_plugin_wakepro", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\astrbot_plugin_wakepro", "remote": "origin", "branch": "main" },
+    { "name": "builtin_commands_extension", "repoPath": "REPLACE_WITH_LOCAL_PATH\\builtin_commands_extension", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\builtin_commands_extension", "remote": "origin", "branch": "main" },
+    { "name": "gatekeeper", "repoPath": "REPLACE_WITH_LOCAL_PATH\\gatekeeper", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\gatekeeper", "remote": "origin", "branch": "main" },
+    { "name": "meme_manager", "repoPath": "REPLACE_WITH_LOCAL_PATH\\meme_manager", "deployPath": "REPLACE_WITH_ASTRBOT_PLUGIN_PATH\\meme_manager", "remote": "origin", "branch": "main" }
+  ]
+}
