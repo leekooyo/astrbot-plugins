@@ -7,7 +7,7 @@ RepoWatch is a short-lived PowerShell checker for multiple Git repositories and 
 - Uncommitted and untracked files in each configured repository.
 - Local `HEAD` against the local remote-tracking branch, plus a read-only `git ls-remote` check against the current remote branch. It does not fetch, commit, push, merge, or change branches.
 - SHA-256 differences between Git-tracked source/document files and deployment files. It also counts eligible deployment files that have no tracked counterpart, which catches newly added runtime files.
-- Emails only when a repository's issue categories change, and one recovery email when it becomes clean. The first run after email setup sends a current-state report, including repositories that already had differences. If delivery fails, the state is not advanced, so the next run retries. State is written to a local JSON file only when it changes.
+- Emails when a repository's issue categories or changed file contents change, and once when it becomes clean. An unchanged difference is not mailed again every hour. The first run after email setup sends a current-state report, including repositories that already had differences. If delivery fails, the state is not advanced, so the next run retries. State is written to a local JSON file only when it changes; it stores hashes, not file contents.
 
 The checker reads eligible files to hash them. It never reads or sends their contents. Excluded path segments include `.git`, `__pycache__`, test directories, `UPSTREAM.md`, `node_modules`, virtual environments, caches, logs, temporary files, and runtime `data` directories. `excludeRuntimePaths` handles intentional machine-local files such as `image_host/config.json`. The extension allowlist and exclusions are configurable.
 

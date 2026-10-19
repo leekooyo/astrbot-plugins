@@ -2,6 +2,7 @@
     param(
         [Parameter(Mandatory = $true)][object[]]$Results,
         [Parameter(Mandatory = $true)][hashtable]$PreviousIssuesByName,
+        [hashtable]$PreviousFingerprintByName = @{},
         [Parameter(Mandatory = $true)][bool]$IsInitial
     )
 
@@ -17,9 +18,15 @@
         }
 
         $previousIssues = @($PreviousIssuesByName[$name] | Where-Object { $_ } | Sort-Object -Unique)
-        if (($previousIssues -join ',') -eq ($currentIssues -join ',')) { continue }
+        $issuesChanged = ($previousIssues -join ',') -ne ($currentIssues -join ',')
+        $previousFingerprint = [string]$PreviousFingerprintByName[$name]
+        $currentFingerprint = if ($result.PSObject.Properties['Fingerprint']) { [string]$result.Fingerprint } else { '' }
+        $contentChanged = $currentIssues.Count -gt 0 -and $previousFingerprint -and $currentFingerprint -and $previousFingerprint -ne $currentFingerprint
+        if (-not $issuesChanged -and -not $contentChanged) { continue }
         $changed = $true
-        if ($currentIssues.Count) {
+        if ($contentChanged -and -not $issuesChanged) {
+            $lines.Add(('{0}: 差异内容已变化；当前问题：{1}' -f $name, ($currentIssues -join ', ')))
+        } elseif ($currentIssues.Count) {
             $lines.Add(('{0}: {1}' -f $name, ($currentIssues -join ', ')))
         } elseif ($previousIssues.Count) {
             $lines.Add(('{0}: 已恢复同步' -f $name))

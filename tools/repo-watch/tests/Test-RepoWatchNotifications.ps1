@@ -24,6 +24,22 @@ $unchanged = Get-RepoWatchNotification -Results $current -PreviousIssuesByName @
 } -IsInitial $false
 Assert-True (-not $unchanged.ShouldSend) 'Unchanged status must not send another email.'
 
+$contentChanged = Get-RepoWatchNotification -Results @(
+    [pscustomobject]@{ Name = 'plugin-a'; Issues = @('deployment-drift'); Fingerprint = 'new-content' }
+) -PreviousIssuesByName @{ 'plugin-a' = @('deployment-drift') } -PreviousFingerprintByName @{ 'plugin-a' = 'old-content' } -IsInitial $false
+Assert-True $contentChanged.ShouldSend 'A changed file must notify even while the issue category remains active.'
+Assert-True ($contentChanged.Body -match '差异内容已变化') 'Change report must explain the content change.'
+
+$sameContent = Get-RepoWatchNotification -Results @(
+    [pscustomobject]@{ Name = 'plugin-a'; Issues = @('deployment-drift'); Fingerprint = 'same-content' }
+) -PreviousIssuesByName @{ 'plugin-a' = @('deployment-drift') } -PreviousFingerprintByName @{ 'plugin-a' = 'same-content' } -IsInitial $false
+Assert-True (-not $sameContent.ShouldSend) 'A repeated difference must not send another email.'
+
+$cleanContentChanged = Get-RepoWatchNotification -Results @(
+    [pscustomobject]@{ Name = 'plugin-a'; Issues = @(); Fingerprint = 'new-content' }
+) -PreviousIssuesByName @{ 'plugin-a' = @() } -PreviousFingerprintByName @{ 'plugin-a' = 'old-content' } -IsInitial $false
+Assert-True (-not $cleanContentChanged.ShouldSend) 'A clean repository changing normally must not trigger an email.'
+
 $changed = Get-RepoWatchNotification -Results @(
     [pscustomobject]@{ Name = 'plugin-a'; Issues = @('deployment-drift', 'working-tree'); Deploy = $null }
 ) -PreviousIssuesByName @{ 'plugin-a' = @('deployment-drift') } -IsInitial $false

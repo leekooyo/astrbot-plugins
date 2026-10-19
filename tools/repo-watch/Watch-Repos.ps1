@@ -23,6 +23,17 @@ function Get-GitOutput {
     [pscustomobject]@{ ExitCode = $exitCode; Lines = $result }
 }
 
+function Get-ContentFingerprint {
+    param([string[]]$Parts)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [Text.Encoding]::UTF8.GetBytes(($Parts -join "`n"))
+        ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $sha.Dispose()
+    }
+}
+
 function Get-DeploySummary {
     param($RepositoryConfig, $MonitorConfig)
     if (-not $RepositoryConfig.PSObject.Properties['deployPath'] -or -not $RepositoryConfig.deployPath) { return $null }
@@ -50,13 +61,14 @@ function Get-DeploySummary {
 
     $different = 0
     $missing = 0
+    $differences = [Collections.Generic.List[string]]::new()
     foreach ($relative in $expected.Keys) {
         $deployFile = Join-Path $RepositoryConfig.deployPath ($relative.Replace('/', [IO.Path]::DirectorySeparatorChar))
-        if (-not (Test-Path -LiteralPath $deployFile -PathType Leaf)) { $missing++; continue }
+        if (-not (Test-Path -LiteralPath $deployFile -PathType Leaf)) { $missing++; $differences.Add("missing:$relative"); continue }
         $sourceFile = Join-Path $RepositoryConfig.repoPath ($relative.Replace('/', [IO.Path]::DirectorySeparatorChar))
         $sourceHash = (Get-FileHash -LiteralPath $sourceFile -Algorithm SHA256).Hash
         $deployHash = (Get-FileHash -LiteralPath $deployFile -Algorithm SHA256).Hash
-        if ($sourceHash -ne $deployHash) { $different++ }
+        if ($sourceHash -ne $deployHash) { $different++; $differences.Add("different:$relative`:$sourceHash`:$deployHash") }
     }
 
     $unexpected = 0
@@ -72,10 +84,14 @@ function Get-DeploySummary {
             if (@($normalized.Split('/') | Where-Object { $_.ToLowerInvariant() -in $excluded }).Count -gt 0) { continue }
             $lowerRelative = $normalized.ToLowerInvariant()
             if (@($excludedRuntimePaths | Where-Object { $lowerRelative -eq $_ -or $lowerRelative.StartsWith($_ + '/') }).Count -gt 0) { continue }
-            if (-not $trackedSet.Contains($relative)) { $unexpected++ }
+            if (-not $trackedSet.Contains($relative)) {
+                $unexpected++
+                $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+                $differences.Add("unexpected:$normalized`:$hash")
+            }
         }
     }
-    [pscustomobject]@{ Different = $different; Missing = $missing; Unexpected = $unexpected }
+    [pscustomobject]@{ Different = $different; Missing = $missing; Unexpected = $unexpected; Fingerprint = Get-ContentFingerprint -Parts @($differences | Sort-Object) }
 }
 
 function Get-RepoStatus {
@@ -87,11 +103,25 @@ function Get-RepoStatus {
     $status = Get-GitOutput -Repository $repo -GitArgs @('status', '--porcelain=v1', '--untracked-files=normal')
     if ($status.ExitCode -ne 0) { throw 'Unable to inspect Git working tree.' }
     if ($status.Lines.Count -gt 0) { $issues.Add('working-tree') }
+    $fingerprintParts = [Collections.Generic.List[string]]::new()
+    if ($status.Lines.Count -gt 0) {
+        $changedFiles = Get-GitOutput -Repository $repo -GitArgs @('-c', 'core.quotepath=false', 'ls-files', '-m', '-d', '-o', '--exclude-standard')
+        if ($changedFiles.ExitCode -ne 0) { throw 'Unable to inspect changed files.' }
+        foreach ($relative in @($changedFiles.Lines | Sort-Object -Unique)) {
+            $file = Join-Path $repo ([string]$relative)
+            $hash = if (Test-Path -LiteralPath $file -PathType Leaf) { (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash } else { 'missing' }
+            $fingerprintParts.Add("working:$relative`:$hash")
+        }
+        foreach ($line in $status.Lines) { $fingerprintParts.Add("status:$line") }
+    }
 
     $branch = [string]$RepositoryConfig.branch
     $remote = [string]$RepositoryConfig.remote
     if ($branch -notmatch '^[A-Za-z0-9._/-]+$' -or $remote -notmatch '^[A-Za-z0-9._-]+$') { throw 'Invalid remote or branch in configuration.' }
     $trackingRef = "refs/remotes/$remote/$branch"
+    $head = Get-GitOutput -Repository $repo -GitArgs @('rev-parse', 'HEAD')
+    if ($head.ExitCode -ne 0) { throw 'Unable to inspect HEAD.' }
+    $fingerprintParts.Add("head:$($head.Lines[0])")
     $tracking = Get-GitOutput -Repository $repo -GitArgs @('rev-parse', '--verify', $trackingRef)
     if ($tracking.ExitCode -eq 0) {
         $divergence = Get-GitOutput -Repository $repo -GitArgs @('rev-list', '--left-right', '--count', "HEAD...$trackingRef")
@@ -111,6 +141,7 @@ function Get-RepoStatus {
         $issues.Add('remote-check-failed')
     } else {
         $remoteLine = @($remoteResult.Lines | Where-Object { $_ }) | Select-Object -First 1
+        if ($remoteLine) { $fingerprintParts.Add("remote:$remoteLine") }
         if (-not $remoteLine) {
             $issues.Add('remote-branch-missing')
         } elseif ($tracking.ExitCode -eq 0) {
@@ -124,7 +155,8 @@ function Get-RepoStatus {
 
     $deploy = Get-DeploySummary -RepositoryConfig $RepositoryConfig -MonitorConfig $MonitorConfig
     if ($deploy -and ($deploy.Different -gt 0 -or $deploy.Missing -gt 0 -or $deploy.Unexpected -gt 0)) { $issues.Add('deployment-drift') }
-    [pscustomobject]@{ Name = [string]$RepositoryConfig.name; Issues = @($issues | Sort-Object -Unique); Deploy = $deploy }
+    if ($deploy) { $fingerprintParts.Add("deploy:$($deploy.Fingerprint)") }
+    [pscustomobject]@{ Name = [string]$RepositoryConfig.name; Issues = @($issues | Sort-Object -Unique); Deploy = $deploy; Fingerprint = Get-ContentFingerprint -Parts @($fingerprintParts | Sort-Object) }
 }
 
 $configFile = (Resolve-Path -LiteralPath $ConfigPath).Path
@@ -132,11 +164,15 @@ $config = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
 if (-not $config.repositories -or -not $config.statePath) { throw 'Configuration must contain repositories and statePath.' }
 $statePath = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables([string]$config.statePath))
 $oldState = @{}
+$oldFingerprints = @{}
 $notificationsInitialized = $false
 if (Test-Path -LiteralPath $statePath) {
     try {
         $parsed = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
-        foreach ($entry in $parsed.repositories) { $oldState[[string]$entry.name] = @($entry.issues) }
+        foreach ($entry in $parsed.repositories) {
+            $oldState[[string]$entry.name] = @($entry.issues)
+            if ($entry.PSObject.Properties['fingerprint']) { $oldFingerprints[[string]$entry.name] = [string]$entry.fingerprint }
+        }
         if ($parsed.PSObject.Properties['notificationsInitialized']) {
             $notificationsInitialized = [bool]$parsed.notificationsInitialized
         }
@@ -155,12 +191,11 @@ foreach ($repository in $config.repositories) {
         $failed = [pscustomobject]@{ Name = [string]$repository.name; Issues = @('check-failed'); Deploy = $null }
         $newResults.Add($failed)
         Write-Verbose ("{0}: line {1}: check failed: {2}" -f $repository.name, $_.InvocationInfo.ScriptLineNumber, $_.Exception.Message)
-        if (@($oldState[[string]$repository.name]) -notcontains 'check-failed') { $notices.Add("$($repository.name): 检查失败，请查看本机脚本输出") }
         Write-Output ("{0}: CHECK FAILED" -f $repository.name)
     }
 }
 
-$notification = Get-RepoWatchNotification -Results $newResults.ToArray() -PreviousIssuesByName $oldState -IsInitial (-not $notificationsInitialized)
+$notification = Get-RepoWatchNotification -Results $newResults.ToArray() -PreviousIssuesByName $oldState -PreviousFingerprintByName $oldFingerprints -IsInitial (-not $notificationsInitialized)
 if (-not $NoNotify -and $notification.ShouldSend) {
     if (-not $config.PSObject.Properties['smtp']) { throw 'SMTP settings are missing from the local configuration.' }
     try {
@@ -172,7 +207,7 @@ if (-not $NoNotify -and $notification.ShouldSend) {
     }
 }
 
-$newState = [pscustomobject]@{ version = 2; notificationsInitialized = $notificationsInitialized; repositories = @($newResults | ForEach-Object { [pscustomobject]@{ name = $_.Name; issues = @($_.Issues) } }) }
+$newState = [pscustomobject]@{ version = 3; notificationsInitialized = $notificationsInitialized; repositories = @($newResults | ForEach-Object { [pscustomobject]@{ name = $_.Name; issues = @($_.Issues); fingerprint = [string]$_.Fingerprint } }) }
 $stateJson = $newState | ConvertTo-Json -Depth 5
 $writeState = $true
 if (Test-Path -LiteralPath $statePath) {
