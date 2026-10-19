@@ -1,6 +1,15 @@
 {
   "statePath": "%LOCALAPPDATA%\\RepoWatch\\state.json",
   "proxyMode": "git-config",
+  "smtp": {
+    "server": "smtp.qq.com",
+    "port": 587,
+    "enableSsl": true,
+    "username": "your-qq-number@qq.com",
+    "from": "your-qq-number@qq.com",
+    "to": "your-qq-number@qq.com",
+    "credentialPath": "%LOCALAPPDATA%\\RepoWatch\\smtp-password.dpapi"
+  },
   "deployExtensions": [
     ".py", ".js", ".ts", ".json", ".yaml", ".yml", ".toml", ".md", ".html", ".css", ".txt"
   ],

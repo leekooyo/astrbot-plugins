@@ -7,6 +7,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'RepoWatch.Notifications.ps1')
 
 function Get-GitOutput {
     param([string]$Repository, [string[]]$GitArgs, [string]$ProxyMode = 'git-config')
@@ -126,54 +127,28 @@ function Get-RepoStatus {
     [pscustomobject]@{ Name = [string]$RepositoryConfig.name; Issues = @($issues | Sort-Object -Unique); Deploy = $deploy }
 }
 
-function Send-DesktopNotice {
-    param([string]$Title, [string]$Message)
-    Add-Type -AssemblyName System.Windows.Forms
-    Add-Type -AssemblyName System.Drawing
-    $icon = [System.Windows.Forms.NotifyIcon]::new()
-    try {
-        $icon.Icon = [System.Drawing.SystemIcons]::Information
-        $icon.Visible = $true
-        $icon.BalloonTipTitle = $Title
-        $icon.BalloonTipText = $Message
-        $icon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Info
-        $icon.ShowBalloonTip(10000)
-        Start-Sleep -Seconds 5
-    } finally {
-        $icon.Visible = $false
-        $icon.Dispose()
-    }
-}
-
 $configFile = (Resolve-Path -LiteralPath $ConfigPath).Path
 $config = Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
 if (-not $config.repositories -or -not $config.statePath) { throw 'Configuration must contain repositories and statePath.' }
 $statePath = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables([string]$config.statePath))
 $oldState = @{}
+$notificationsInitialized = $false
 if (Test-Path -LiteralPath $statePath) {
     try {
         $parsed = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
         foreach ($entry in $parsed.repositories) { $oldState[[string]$entry.name] = @($entry.issues) }
+        if ($parsed.PSObject.Properties['notificationsInitialized']) {
+            $notificationsInitialized = [bool]$parsed.notificationsInitialized
+        }
     } catch { $oldState = @{} }
 }
 
 $newResults = [Collections.Generic.List[object]]::new()
-$notices = [Collections.Generic.List[string]]::new()
 foreach ($repository in $config.repositories) {
     try {
         $result = Get-RepoStatus -RepositoryConfig $repository -MonitorConfig $config
         $newResults.Add($result)
         $newIssues = @($result.Issues | Sort-Object -Unique)
-        $oldIssues = @($oldState[[string]$repository.name] | Sort-Object -Unique)
-        $oldKey = $oldIssues -join ','
-        $newKey = $newIssues -join ','
-        if ($oldKey -ne $newKey) {
-            if ($newIssues.Count -gt 0) {
-                $notices.Add("$($repository.name): $($newIssues -join ', ')")
-            } elseif ($oldIssues.Count -gt 0) {
-                $notices.Add("$($repository.name): 已恢复同步")
-            }
-        }
         $deployDetails = if ($result.Deploy) { "; deployment diff=$($result.Deploy.Different), missing=$($result.Deploy.Missing), extra=$($result.Deploy.Unexpected)" } else { '' }
         Write-Output ("{0}: {1}{2}" -f $repository.name, $(if ($newIssues.Count) { $newIssues -join ', ' } else { 'OK' }), $deployDetails)
     } catch {
@@ -185,7 +160,19 @@ foreach ($repository in $config.repositories) {
     }
 }
 
-$newState = [pscustomobject]@{ version = 1; repositories = @($newResults | ForEach-Object { [pscustomobject]@{ name = $_.Name; issues = @($_.Issues) } }) }
+$notification = Get-RepoWatchNotification -Results $newResults.ToArray() -PreviousIssuesByName $oldState -IsInitial (-not $notificationsInitialized)
+if (-not $NoNotify -and $notification.ShouldSend) {
+    if (-not $config.PSObject.Properties['smtp']) { throw 'SMTP settings are missing from the local configuration.' }
+    try {
+        Send-RepoWatchEmail -Smtp $config.smtp -Subject $notification.Subject -Body $notification.Body
+        $notificationsInitialized = $true
+        Write-Output 'Email notification sent.'
+    } catch {
+        throw 'Unable to send RepoWatch email. Notification state was not saved and will be retried on the next run.'
+    }
+}
+
+$newState = [pscustomobject]@{ version = 2; notificationsInitialized = $notificationsInitialized; repositories = @($newResults | ForEach-Object { [pscustomobject]@{ name = $_.Name; issues = @($_.Issues) } }) }
 $stateJson = $newState | ConvertTo-Json -Depth 5
 $writeState = $true
 if (Test-Path -LiteralPath $statePath) {
@@ -195,9 +182,4 @@ if ($writeState) {
     $stateDirectory = Split-Path -Parent $statePath
     New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
     $stateJson | Set-Content -LiteralPath $statePath -Encoding UTF8
-}
-if (-not $NoNotify -and $notices.Count -gt 0) {
-    $text = ($notices | Select-Object -First 5) -join "`n"
-    if ($notices.Count -gt 5) { $text += "`n及其他 $($notices.Count - 5) 项" }
-    Send-DesktopNotice -Title '本地仓库检查' -Message $text
 }

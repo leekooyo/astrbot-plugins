@@ -18,9 +18,9 @@
 
 使用汇总仓库中的 [`tools/repo-watch`](tools/repo-watch/README.md) 作为可复用检查器。当前 WorkBuddy 未提供任务完成回调，因此本机用 Windows 计划任务每 60 分钟启动一次后退出；任务只在用户登录时运行，不需要常驻进程：
 
-1. 本机配置文件放在 `%LOCALAPPDATA%\RepoWatch\config.json`，保存仓库路径、AstrBot 部署路径、远端分支和状态文件位置；这些个人路径不进入 Git。
+1. 本机配置文件放在 `%LOCALAPPDATA%\RepoWatch\config.json`，保存仓库路径、AstrBot 部署路径、远端分支、SMTP 设置和状态文件位置；个人路径与发件人/收件人地址不进入 Git，SMTP 授权码用当前 Windows 用户的 DPAPI 加密后留在本机。
 2. 检查器查看未提交/未跟踪改动、本地提交与 tracking ref 的差异，并用只读 `git ls-remote` 检查 GitHub 分支指针。它不 fetch、commit、push、merge 或切换分支。
-3. 部署比较只读哈希比对 Git 跟踪文件和本机部署目录，忽略运行数据、缓存、日志、依赖和临时目录；默认只纳入源码、文档及模板扩展名。通知只在问题类别变化时发 Windows 桌面提示，恢复时发一次提示。状态不变时不写状态文件、不重复通知。
+3. 部署比较只读哈希比对 Git 跟踪文件和本机部署目录，忽略运行数据、缓存、日志、依赖和临时目录；默认只纳入源码、文档及模板扩展名。首次启用邮件时发送当前状态摘要；后续仅在问题类别变化或恢复时发送邮件。发送失败不推进通知状态，下次运行会重试。
 4. 每次检查完成后进程退出；检查过程不上传文件内容或凭据。检查结果写入本机小型 JSON 状态文件。GitHub Actions 仍负责 PR/push 上的测试与敏感信息扫描；上游更新由维护者检查后手动合并。
 
 安装、复用和配置说明见 [`tools/repo-watch/README.md`](tools/repo-watch/README.md)。
